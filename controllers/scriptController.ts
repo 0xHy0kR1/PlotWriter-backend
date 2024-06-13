@@ -1,15 +1,26 @@
 import { Request, Response } from "express";
 import Script from '../model/Script';
-import OpenAI from "openai";
+// import OpenAI from "openai";
 import dotenv from "dotenv";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 // import { model } from "mongoose";
 
 dotenv.config();
 
 // Initializing the OpenAI client
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
+// const openai = new OpenAI({
+//     apiKey: process.env.OPENAI_API_KEY,
+//   });
+
+const apiKey = process.env.GEN_API_KEY;
+if (!apiKey) {
+  throw new Error("GEN_API_KEY is not defined in environment variables");
+}
+
+// Access your API key as an environment variable (see "Set up your API key" above)
+const genAI = new GoogleGenerativeAI(apiKey);
+
+const ai = genAI.getGenerativeModel({ model: "gemini-1.5-flash"});
 
   const handleError = (res: Response, error: unknown, defaultMessage: string) => {
     if (error instanceof Error) {
@@ -110,57 +121,48 @@ export const deleteScript = async (req: Request, res: Response) => {
     }
 };
 
-export const completeSentence = async(req: Request, res: Response) => {
-    console.log("req.body: "+JSON.stringify(req.body));
-    const { prompt } = req.body;
-    console.log("prompt: "+prompt);
+export const completeSentence = async (req: Request, res: Response) => {
+  console.log("req.body: " + JSON.stringify(req.body));
+  const { prompt } = req.body;
+  console.log("prompt: " + prompt);
 
-    try{
-        const response = await openai.chat.completions.create({
-            model: "gpt-3.5-turbo",
-            messages: [
-                { role: "system", content: "Complete the following sentence." },
-                { role: "system", content: prompt },
-            ],
-            max_tokens: 50,
-        });
-        const message = response.choices?.[0].message?.content?.trim();
+  try {
 
-        if(message){
-            res.json(message);
-        } else{
-            res.status(500).json({ message: 'Error completing sentence' });
-        }
-    } catch (error) {
-        console.error("Error completing sentence:", error);
-        if (error instanceof Error) {
-          res.status(500).json({ message: 'Error completing sentence', error: error.message });
-        } else {
-          res.status(500).json({ message: 'Unexpected error completing sentence' });
-        }
-      }
+    // Generate content based on the prompt
+    const result = await ai.generateContent(prompt);
+    const response = await result.response;
+    const message = await response.text();
+
+    if (message) {
+      res.json({ completion: message.trim() });
+    } else {
+      res.status(500).json({ message: 'Error completing sentence' });
+    }
+  } catch (error) {
+    handleError(res, error, 'Error completing sentence:');
+}
 };
 
-export const correctGrammar = async(req: Request, res: Response) => {
-    const { text } = req.body;
+export const correctGrammar = async (req: Request, res: Response) => {
+  console.log("req: ", req.body.prompt)
+  const text = req.body.prompt;
+  console.log("text: ", text)
 
-    try{
-        const response = await openai.chat.completions.create({
-            model: "gpt-3.5-turbo",
-            messages: [
-                { role: "system", content: "Correct the grammar of the following text." },
-                { role: "user", content: text },
-              ],
-            max_tokens: 100,
-        });
-        const message = response.choices?.[0].message?.content?.trim();
+  try {
+    const prompt = `Correct the grammar of the following text:\n\n${text}`;
+    console.log("prompt: ", prompt)
+    
+    // Generate corrected text
+    const result = await ai.generateContent(prompt);
+    const response = await result.response;
+    const correctedText = await response.text();
 
-        if(message){
-            res.json(message);
-        } else{
-            res.status(500).json({ message: 'Error completing sentence' });
-        }
-    } catch (error){
-        res.status(500).json({ message: 'Error correcting grammar' })
+    if (correctedText) {
+      res.json({ correctedText: correctedText.trim() });
+    } else {
+      res.status(500).json({ message: 'Error correcting grammar' });
     }
-}
+  } catch (error: unknown) {
+    handleError(res, error, 'Error correcting grammar');
+  }
+};
