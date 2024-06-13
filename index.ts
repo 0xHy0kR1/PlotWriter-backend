@@ -6,7 +6,8 @@ import cors from "cors";
 import helmet from "helmet";
 import bodyParser from "body-parser";
 import cookieParser from "cookie-parser";
-import userRouter from "./routes/userRoutes";
+import userRoutes from "./routes/userRoutes";
+import scriptRoutes from "./routes/scriptRoutes";
 import { authenticate } from "./middleware/authMiddleware";
 import { errorHandler } from "./middleware/errorMiddleware";
 
@@ -47,7 +48,8 @@ app.listen(port, () => {
 });
 
 app.use(authRouter);
-app.use("/users", authenticate, userRouter);
+app.use("/users", authenticate, userRoutes);
+app.use("/scripts", authenticate, scriptRoutes);
 
 app.use(errorHandler);
 
