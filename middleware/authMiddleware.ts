@@ -10,24 +10,26 @@ dotenv.config();
 const authenticate = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      let token = req.cookies.jwt;
-      console.log("token ", token)
+      console.log("req.")
+      const token = req.headers.authorization?.split(' ')[1];
+
+      console.log("token: " + token);
 
       if (!token) {
         throw new AuthenticationError("Token not found");
       }
 
-      console.log("after token if")
+      console.log("Before jwtSecret")
       const jwtSecret = process.env.JWT_SECRET || "";
-      console.log("jwt secret"+jwtSecret);
+      console.log("After decoded");
       const decoded = jwt.verify(token, jwtSecret) as JwtPayload;
-      console.log("decoded: ", JSON.stringify(decoded));
+      console.log("After decoded");
 
       if (!decoded || !decoded.userId) {
         throw new AuthenticationError("UserId not found");
       }
 
-      const user = await User.findById(decoded.userId, "_id name email");
+      const user = await User.findById(decoded.userId, "_id first_name last_name email");
 
       if (!user) {
         throw new AuthenticationError("User not found");

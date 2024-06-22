@@ -210,6 +210,25 @@ export const correctGrammar = async (req: Request, res: Response) => {
   }
 };
 
+export const titleSuggestions = async (req: Request, res: Response) => {
+  const { synopsis } = req.body;
+
+  try{
+    const result = await ai.generateContent(`Generate title based on: ${synopsis}`);
+    const response = result.response;
+    const suggestions = response
+      .text()
+      .split("\n")
+      .filter(line => line.startsWith('*') && !line.includes('**'))
+      .map(line => line.replace('* ', '').trim());
+
+    console.log("suggestions: " + suggestions);
+    res.json({ titles: suggestions});
+  } catch (error: unknown){
+    handleError(res, error, 'Error generating title suggestions')
+  }
+}
+
 // Helper function to check if error is related to SAFETY concern
 const isSafetyError = (error: unknown): boolean => {
   if (error instanceof Error && error.message.includes('SAFETY')) {

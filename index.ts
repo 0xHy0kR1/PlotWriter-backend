@@ -15,7 +15,8 @@ dotenv.config();
 
 interface UserBasicInfo {
   _id: string;
-  name: string;
+  first_name: string;
+  last_name: string;
   email: string;
 }
 
@@ -33,7 +34,7 @@ app.use(helmet());
 
 app.use(
   cors({
-    origin: "http://localhost:3000",
+    origin: "http://localhost:5173",
     credentials: true,
   })
 );

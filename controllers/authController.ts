@@ -1,9 +1,13 @@
 import { Request, Response } from "express";
 import User from "../model/User";
 import { generateToken, clearToken } from "../utils/auth";
+import jwt, { JwtPayload } from "jsonwebtoken";
+import { AuthenticationError } from "../middleware/errorMiddleware";
+import asyncHandler from "express-async-handler";
 
 const registerUser = async (req: Request, res: Response) => {
-  const { name, email, password } = req.body;
+  console.log("req.body: " + JSON.stringify(req.body));
+  const { first_name, last_name, email, password } = req.body;
   const userExists = await User.findOne({ email });
 
   if (userExists) {
@@ -11,18 +15,21 @@ const registerUser = async (req: Request, res: Response) => {
   }
 
   const user = await User.create({
-    name,
+    first_name,
+    last_name,
     email,
     password,
   });
 
   if (user) {
     // Generate a token and send it in the response
-    generateToken(res, user._id);
+    const token = generateToken(res, user._id);
     res.status(201).json({
       id: user._id,
-      name: user.name,
+      first_name: user.first_name,
+      last_name: user.last_name,
       email: user.email,
+      api_token: token,
     });
   } else {
     res.status(400).json({ message: "An error occurred in creating the user" });
@@ -30,15 +37,19 @@ const registerUser = async (req: Request, res: Response) => {
 };
 
 const authenticateUser = async (req: Request, res: Response) => {
-  const { email, password } = req.body;
+  console.log("req.body: ", JSON.stringify(req.body));
+  const { first_name, last_name, email, password } = req.body;
   const user = await User.findOne({ email });
 
-  if (user && (await user.comparePassword(password))) {
-    generateToken(res, user._id);
+  if (user && (user.comparePassword(password))) {
+    // Generate a token and send it in the response
+    const token = generateToken(res, user._id);
     res.status(201).json({
       id: user._id,
-      name: user.name,
+      first_name: user.first_name,
+      last_name: user.last_name,
       email: user.email,
+      api_token: token,
     });
   } else {
     res.status(401).json({ message: "User not found / password incorrect" });
@@ -51,4 +62,31 @@ const logoutUser = (req: Request, res: Response) => {
     res.status(200).json({ message: "User logged out" });
 };
 
-export { registerUser, authenticateUser, logoutUser };
+const verifyToken = asyncHandler(async (req: Request, res: Response) => {
+  const token = req.body.api_token;
+
+  if (!token) {
+    throw new AuthenticationError("Token not found");
+  }
+
+  try {
+    const jwtSecret = process.env.JWT_SECRET || "";
+    const decoded = jwt.verify(token, jwtSecret) as JwtPayload;
+
+    if (!decoded || !decoded.userId) {
+      throw new AuthenticationError("UserId not found");
+    }
+
+    const user = await User.findById(decoded.userId, "_id first_name last_name email");
+
+    if (!user) {
+      throw new AuthenticationError("User not found");
+    }
+
+    res.status(200).json(user);
+  } catch (e) {
+    res.status(401).json({ message: "Invalid token" });
+  }
+});
+
+export { registerUser, authenticateUser, verifyToken, logoutUser };
