@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { completeSentence, correctGrammar, createScript, deleteScript, getScripts, updateScript, titleSuggestions, getEditorContent } from '../controllers/scriptController';
+import { completeSentence, correctGrammar, createScript, deleteScript, getScripts, updateScript, titleSuggestions, getEditorSampleContent, getScriptById } from '../controllers/scriptController';
 
 const router = Router();
 
@@ -10,6 +10,7 @@ router.delete('/delete/:id', deleteScript);
 router.post('/complete-sentence', completeSentence);
 router.post('/correct-grammar', correctGrammar);
 router.post('/title-suggestions', titleSuggestions);
-router.post('/editor/:id', getEditorContent)
+router.post('/sample-script', getEditorSampleContent)
+router.get('/editor/:id', getScriptById)
 
 export default router;

@@ -55,66 +55,91 @@ const isSafetyError = (error: unknown): boolean => {
 
 // Helper function to extract characters and scenes from the script
 const extractCharactersAndScenes = (script: string) => {
+  // Revised regex patterns
+  const primaryCharacterRegex = /^\*\s\*\*(.*?):\*\*(.*?)$/gm; // Updated pattern for primary characters
+  const fallbackCharacterRegex = /^\*\*\s*([A-Za-z\s\.]+):\s*\*\*$/gm; // Updated pattern for fallback characters
+  const dialogueCharacterRegex = /^\*\*([A-Z\s]+)\*\*:?/gm; // Pattern to match dialogue tags
+  const sceneRegex = /^\*\*(INT\.|EXT\.)[^\*]*\*\*/gm; // Scene pattern remains the same
 
-  const characterRegex = /\*\*([A-Za-z][a-z]*[A-Za-z]+)\*\*(?=:)|(?:\*\*\w+\*\*)/g;
-  // \*\*                : Matches the opening double asterisks "**"
-  // ([A-Za-z][a-z]*[A-Za-z]+) : Captures a sequence where the first character is an uppercase or lowercase letter,
-  //                             followed by zero or more lowercase letters, and ends with one or more uppercase or lowercase letters
-  // \*\*                : Matches the closing double asterisks "**"
-  // (?=:)               : Positive lookahead to ensure the pattern is followed by a colon ":"
-  // |                   : OR operator to handle an alternate pattern
-  // (?:\*\*\w+\*\*)     : Non-capturing group to match any word (sequence of alphanumeric characters) enclosed in double asterisks "**"
-  // /g                  : Global flag to match all occurrences in the text
-
-  const sceneRegex = /^\*\*(INT\.|EXT\.)[^\*]*\*\*/gm;
-  // ^                   : Anchors the match to the start of a line
-  // \*\*                : Matches the opening double asterisks "**"
-  // (INT\.|EXT\.)       : Captures either "INT." or "EXT." to identify interior or exterior scenes
-  // [^\*]*              : Matches any characters except asterisks "*" (to avoid closing asterisks) until the next part of the pattern
-  // \*\*                : Matches the closing double asterisks "**"
-  // /gm                 : Global flag to match all occurrences, and multiline flag to apply the ^ anchor at the start of each line
-
-  const characters = new Set<string>();
+  const characters1 = new Set<string>();
+  const characters2 = new Set<string>();
   const scenes = new Set<string>();
 
-  const lines = script.split('\n');
-  for (const line of lines){
-    const characterMatch = line.match(characterRegex);
-    if(characterMatch){
-      characterMatch.forEach(char => characters.add(char))
-    }
+  let match;
 
-    console.log("characters from scriptcontroller.ts: " + JSON.stringify(characters))
+  // Check for the presence of "**Themes:**" and split the script accordingly
+  const scriptUpToThemes = script.includes('**Themes:**') ? script.split('**Themes:**')[0] : script;
 
-    const sceneMatch = line.match(sceneRegex);
-    if(sceneMatch){
-      scenes.add(line.trim());
+  // Match characters with the primary regex
+  while ((match = primaryCharacterRegex.exec(scriptUpToThemes)) !== null) {
+    const cleanedCharacter = match[1].trim();
+    characters1.add(cleanedCharacter);
+  }
+  console.log("characters1: " + JSON.stringify(characters1))
+
+  // Match characters with the fallback regex
+  while ((match = fallbackCharacterRegex.exec(scriptUpToThemes)) !== null) {
+    const cleanedCharacter = match[1].replace(/\*\*/g, '').trim(); // Remove the ** and trim
+    characters2.add(cleanedCharacter);
+  }
+  console.log("characters2: " + JSON.stringify(characters2))
+
+  // If no primary or fallback characters found, extract characters from dialogues in the entire script
+  if (characters1.size === 0 && characters2.size === 0) {
+    while ((match = dialogueCharacterRegex.exec(scriptUpToThemes)) !== null) {
+      const cleanedCharacter = match[1].trim();
+      characters2.add(cleanedCharacter);
     }
+  }
+  console.log("characters2: size0 both", characters2);
+
+  // Normalize character names to lower case and remove duplicates between characters1 and characters2
+  const normalize = (name: string) => name.toLowerCase().replace(/[^\w\s]/gi, '').trim();
+  const characters1Normalized = new Set(Array.from(characters1).map(normalize));
+  console.log("chars1Normalized: ", characters1Normalized)
+  const characters2Normalized = new Set(Array.from(characters2).map(normalize));
+  console.log("chars2Normalized: ", characters2Normalized)
+
+  // Add unique characters from characters2 to characters1
+  for (const character of characters2) {
+    if (!characters1Normalized.has(normalize(character))) {
+      console.log("character of characters2: ", character);
+      characters1.add(character);
+    }
+  }
+
+  console.log("character of characters after for loop characters1", characters1)
+  const characters = Array.from(characters1);
+
+  // Remove unwanted strings
+  const unwantedStrings = ["fade in", "characters", "logline", "ending", "voiceover", "notes", "voice (off-screen)", "scene", "end credits"];
+  const uniqueCharacters = characters.filter(character => !unwantedStrings.includes(character.toLowerCase()));
+
+  // Match scenes in the entire script up to the "Themes" section
+  while ((match = sceneRegex.exec(scriptUpToThemes)) !== null) {
+    const cleanedScene = match[0].replace(/\*\*/g, '').trim();
+    scenes.add(cleanedScene);
   }
 
   return {
-    characters: Array.from(characters),
+    characters: uniqueCharacters,
     scenes: Array.from(scenes),
-  }
-}
+  };
+};
 
 export const createScript = async (req: Request, res: Response) => {
     const { title, genre, synopsis, content, socialMedia, scriptSample, characters, scenes } = req.body;
 
-    console.log("title: " + title, "genre: " + genre, "synopsis: " + synopsis, "content: " + content, scriptSample, characters, scenes);
     if(!req.user){
         return res.status(401).json({ message: 'Unauthorized' });
     }
     
     const userId = req.user._id;
-    console.log("userId: ", userId)
 
     try{
         const newScript = new Script({ userId, title, genre, synopsis, content, socialMedia, scriptSample, characters, scenes });
-        console.log("inside try createScript: ");
 
         await newScript.save();
-        console.log("Script saved successfully: ", newScript);
         res.status(201).json(newScript);
     } catch (error) {
         handleError(res, error, 'Error creating script');
@@ -139,20 +164,22 @@ export const getScripts = async (req: Request, res: Response) => {
 
 export const updateScript = async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { title, genre, synopsis, content, socialMedia } = req.body;
+    const { title, genre, synopsis, content, socialMedia, scriptSample, characters, scenes } = req.body;
 
     if(!req.user){
         return res.status(401).json({ message: 'Unauthorized' });
     }
 
     const userId = req.user._id;
+    console.log("userId: ", userId)
 
     try{
         const updatedScript = await Script.findOneAndUpdate(
             {_id: id, userId },
-            { title, genre, synopsis, content, socialMedia },
+            { title, genre, synopsis, content, socialMedia, scriptSample, characters, scenes },
             { new: true}
         );
+        console.log("script updated successfully: ", updatedScript);
 
         if(!updatedScript) {
             return res.status(404).json({ message: 'Script not found' });
@@ -187,7 +214,6 @@ export const deleteScript = async (req: Request, res: Response) => {
 };
 
 export const completeSentence = async (req: Request, res: Response) => {
-  console.log("req.body: ", req.body);
   const prompt = req.body.completion;
 
   try {
@@ -241,7 +267,6 @@ export const correctGrammar = async (req: Request, res: Response) => {
   } catch (error: unknown) {
     if (isSafetyError(error)) {
       console.error("Safety Error: Retrying with modified prompt");
-      console.log("error entered google here ---")
       try {
         const modifiedPrompt = `SAFE: Correct the grammar of the following text:\n\n${text}`;
         const result = await ai.generateContent(modifiedPrompt);
@@ -274,10 +299,9 @@ export const titleSuggestions = async (req: Request, res: Response) => {
       .filter(line => line.startsWith('*') && !line.includes('**'))
       .map(line => line.replace('* ', '').trim());
 
-    console.log("suggestions: " + suggestions);
+    console.log("suggestions: ", suggestions)
     res.json({ titles: suggestions});
   } catch (error: unknown) {
-    console.log("title suggestions error")
     if (isSafetyError(error)) {
       // Handle SAFETY error
       console.error("Safety Error occurred:", error);
@@ -289,8 +313,7 @@ export const titleSuggestions = async (req: Request, res: Response) => {
   }
 }
 
-export const getEditorContent = async (req: Request, res: Response) => {
-  const { id } = req.params;
+export const getEditorSampleContent = async (req: Request, res: Response) => {
   const { synopsis, socialMedia, content, genre } = req.body;
 
   try{
@@ -352,4 +375,28 @@ export const getEditorContent = async (req: Request, res: Response) => {
     }
   }
   
+}
+
+// Function to fetch sample script by script ID
+export const getScriptById = async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  if(!req.user){
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+  
+  const userId = req.user._id;
+
+  try{
+    // Fetch script by ID and userId from MongoDB
+    const script = await Script.findOne({ _id: id, userId });
+
+    if(!script){
+      return res.status(404).json({ message: 'Script not found' });
+    }
+
+    res.status(200).json(script);
+  } catch (error){
+    res.status(500).json({ message: 'Error fetching script'})
+  }
 }

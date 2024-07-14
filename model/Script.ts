@@ -8,7 +8,7 @@ export interface IScript extends Document {
   synopsis?: string;
   content?: string;
   socialMedia?: string;
-  scriptSample?: string;
+  scriptSample: string;
   characters?: string[];
   scenes?: string[];
 }
@@ -37,7 +37,7 @@ const ScriptSchema = new Schema<IScript>(
       type: String,
       required: false,
     },
-    scriptSample: { type: String, required: false },
+    scriptSample: { type: String, required: true },
     characters: { type: [String], required: false },
     scenes: { type: [String], required: false },
   },
