@@ -10,6 +10,7 @@ export interface IScript extends Document {
   socialMedia?: string;
   scriptSample: string;
   characters?: string[];
+  characterDescriptions?: { [name: string]: string }; // Map character name to description
   scenes?: string[];
 }
 
@@ -39,6 +40,12 @@ const ScriptSchema = new Schema<IScript>(
     },
     scriptSample: { type: String, required: true },
     characters: { type: [String], required: false },
+    characterDescriptions: { 
+      type: Map, 
+      of: String, 
+      required: false, 
+      default: {}  // Ensure default empty object for new scripts
+     }, // Use Map for character descriptions
     scenes: { type: [String], required: false },
   },
   // Enable automatic creation of createdAt and updatedAt fields

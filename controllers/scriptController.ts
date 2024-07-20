@@ -56,10 +56,18 @@ const isSafetyError = (error: unknown): boolean => {
 // Helper function to extract characters and scenes from the script
 const extractCharactersAndScenes = (script: string) => {
   // Revised regex patterns
-  const primaryCharacterRegex = /^\*\s\*\*(.*?):\*\*(.*?)$/gm; // Updated pattern for primary characters
+  const primaryCharacterRegex = /^\*\s\*\*(.*?):\s*(.*?)$/gm;// Updated pattern for primary characters
   const fallbackCharacterRegex = /^\*\*\s*([A-Za-z\s\.]+):\s*\*\*$/gm; // Updated pattern for fallback characters
   const dialogueCharacterRegex = /^\*\*([A-Z\s]+)\*\*:?/gm; // Pattern to match dialogue tags
-  const sceneRegex = /^\*\*(INT\.|EXT\.)[^\*]*\*\*/gm; // Scene pattern remains the same
+  // const sceneRegex = /^\*\*(INT\.|EXT\.)[^\*]*\*\*/gm; // Scene pattern remains the same
+  // Regular expression to match scenes with or without parentheses
+// ^\**          - Matches zero or more asterisks at the beginning of the line (allows for optional leading asterisks)
+// \s*           - Matches zero or more whitespace characters
+// \(?           - Matches an optional opening parenthesis
+// (INT\.|EXT\.) - Matches "INT." or "EXT." literally (denoting the start of a scene heading)
+// [^\*\)]*      - Matches zero or more characters that are neither an asterisk nor a closing parenthesis
+// \)?           - Matches an optional closing parenthesis
+  const sceneRegex = /^\**\s*(\(?(INT\.|EXT\.)[^\*\)]*\)?)/gm; // Updated scene pattern to match scenes with or without parentheses
 
   const characters1 = new Set<string>();
   const characters2 = new Set<string>();
@@ -128,7 +136,7 @@ const extractCharactersAndScenes = (script: string) => {
 };
 
 export const createScript = async (req: Request, res: Response) => {
-    const { title, genre, synopsis, content, socialMedia, scriptSample, characters, scenes } = req.body;
+    const { title, genre, synopsis, content, socialMedia, scriptSample, characters, characterDescriptions, scenes } = req.body;
 
     if(!req.user){
         return res.status(401).json({ message: 'Unauthorized' });
@@ -137,7 +145,7 @@ export const createScript = async (req: Request, res: Response) => {
     const userId = req.user._id;
 
     try{
-        const newScript = new Script({ userId, title, genre, synopsis, content, socialMedia, scriptSample, characters, scenes });
+        const newScript = new Script({ userId, title, genre, synopsis, content, socialMedia, scriptSample, characters, characterDescriptions, scenes });
 
         await newScript.save();
         res.status(201).json(newScript);
@@ -398,5 +406,102 @@ export const getScriptById = async (req: Request, res: Response) => {
     res.status(200).json(script);
   } catch (error){
     res.status(500).json({ message: 'Error fetching script'})
+  }
+}
+
+const sanitizeText = (text: string): string => {
+  return text.replace(/[*#]/g, '').trim();
+};
+
+// Function to generate description for a character 
+export const generateDescription = async (req: Request, res: Response) => {
+  const { individuality } = req.body;
+
+  if(!individuality){
+    return res.status(400).json({ message: "Individuality description is required" })
+  }
+
+  try{
+    const prompt = `Generate a detailed description of a character with the following individuality: ${individuality}. Include details on age, appearance, background, personality, motivation, and conflict.`;
+    const result = await ai.generateContent(prompt);
+    const response = result.response;
+    const description = response.text();
+
+    if(description){
+      const sanitizedDescription = sanitizeText(description);
+      res.json({ description: sanitizedDescription });
+    } else{
+      res.status(500).json({ message: "Error generating description" });
+    }
+  } catch (error: unknown) {
+    if(isSafetyError(error)) {
+      console.error("Safety Error: Retrying with modified prompt");
+
+      try{
+        const modifiedPrompt = `SAFE: Generate a detailed description of a character with the following individuality: ${individuality}. Include details on appearance, background, personality, motivation, and conflict.`;
+        const result = await ai.generateContent(modifiedPrompt);
+        const response = result.response;
+        const description = response.text();
+
+        if(description){
+          res.json({ description: description.trim() });
+        } else{ 
+          res.status(500).json({ message: "Error generating description" });
+        }
+      } catch (retryError: unknown){
+        handleError(res, retryError, "Error generating description after retry");
+      }
+    } else{
+      handleError(res, error, "Error generating descrition");
+    }
+  }
+
+}
+
+// Function to update character details in a script
+export const updateCharacterDetails = async (req: Request, res: Response) => {
+  try{
+    const { scriptId } = req.params;
+    const { oldCharacterName, newCharacterName, characterDescriptions } = req.body;
+
+    if( !scriptId || !oldCharacterName || !newCharacterName || !characterDescriptions ){
+      return res.status(400).json({ success: false, message: "Missing required fields" });
+    }
+
+    const script = await Script.findById(scriptId);
+    if(!script){
+      return res.status(404).json({ success: false, message: "Script not found" });
+    }
+
+    // Update characters array
+    if(!script.characters){
+      script.characters = [];
+    }
+
+    const charIndex = script.characters.findIndex(char => char === oldCharacterName);
+    if(charIndex !== -1) {
+      // Character found, update it
+      script.characters[charIndex] = newCharacterName;
+    } else {
+      // Character not found, add new character
+      script.characters.push(newCharacterName);
+    }
+
+    // Update character descriptions
+    script.characterDescriptions = {
+      ...script.characterDescriptions,
+      [newCharacterName]: characterDescriptions,
+    };
+
+    // Remove old character description if the name has changed
+    if(oldCharacterName !== newCharacterName) {
+      delete script.characterDescriptions[oldCharacterName];
+    }
+
+    await script.save();
+
+    return res.status(200).json({ success: true, message: "Character details updated successfully", data: script });
+  } catch (error: unknown) {
+    return res.status(500).json({ success: false, message: "Error updating character details"});
   }
 }
